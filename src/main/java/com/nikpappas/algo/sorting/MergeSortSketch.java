@@ -4,20 +4,18 @@ package com.nikpappas.algo.sorting;
 import processing.core.PApplet;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import static java.lang.Thread.sleep;
 
 public class MergeSortSketch extends PApplet {
 
   private static class TreeNode {
-    List<Integer> val;
-    boolean isSorted;
-    TreeNode l;
-    TreeNode r;
+    volatile List<Integer> val = List.of();
+    volatile boolean isSorted;
+    volatile TreeNode l;
+    volatile TreeNode r;
   }
 
   private static final int SIZE = 16;
@@ -31,9 +29,14 @@ public class MergeSortSketch extends PApplet {
   }
 
 
-  List<Integer> list = new ArrayList<>();
+  volatile List<Integer> list = List.of();
+  volatile TreeNode root = new TreeNode();
 
-  TreeNode root = new TreeNode();
+  private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
+    var t = new Thread(r, "merge-sort-worker");
+    t.setDaemon(true);
+    return t;
+  });
 
 
   @Override
@@ -42,67 +45,68 @@ public class MergeSortSketch extends PApplet {
   }
 
   private void reset() {
-    list = new ArrayList<>();
+    var initial = new ArrayList<Integer>(SIZE);
     for (int i = 0; i < SIZE; i++) {
-      list.add((int) (random(100)));
+      initial.add((int) (random(100)));
     }
-    root.val = list;
+    var snapshot = List.copyOf(initial);
+    list = snapshot;
+    root.val = snapshot;
   }
 
 
-  private List<Integer> merge(TreeNode node, List<Integer> a, List<Integer> b) {
-    var toRet = new LinkedList<Integer>();
+  private void merge(TreeNode parent, TreeNode left, TreeNode right) {
+    var a = new ArrayList<>(left.val);
+    var b = new ArrayList<>(right.val);
+    var out = new ArrayList<Integer>(a.size() + b.size());
+
     while (!a.isEmpty() && !b.isEmpty()) {
       if (a.get(0) < b.get(0)) {
-        toRet.add(a.remove(0));
+        out.add(a.remove(0));
+        left.val = List.copyOf(a);
       } else {
-        toRet.add(b.remove(0));
+        out.add(b.remove(0));
+        right.val = List.copyOf(b);
       }
     }
     while (!a.isEmpty()) {
-      toRet.add(a.remove(0));
+      out.add(a.remove(0));
+      left.val = List.copyOf(a);
     }
     while (!b.isEmpty()) {
-      toRet.add(b.remove(0));
+      out.add(b.remove(0));
+      right.val = List.copyOf(b);
     }
-    System.out.println("ret:" + toRet);
-    try {
-      sleep(1000);
-    } catch (InterruptedException e) {
-
-    }
-    node.val = toRet;
-    node.isSorted = true;
-    try {
-      sleep(1000);
-    } catch (InterruptedException e) {
-
-    }
-    return toRet;
+    System.out.println("ret:" + out);
+    sleepQuietly(1000);
+    parent.val = List.copyOf(out);
+    parent.isSorted = true;
+    sleepQuietly(1000);
   }
 
-  private List<Integer> sort(TreeNode node, List<Integer> list) {
-    if (list.size() == 1) {
-      return list;
+  private void sort(TreeNode node) {
+    var data = node.val;
+    if (data.size() <= 1) {
+      node.isSorted = true;
+      return;
     }
+    int mid = data.size() / 2;
 
-    if (list.size() == 2) {
-      return merge(node, new ArrayList<>(list.subList(0, 1)), new ArrayList<>(list.subList(1, 2)));
-    }
+    var left = new TreeNode();
+    left.val = List.copyOf(data.subList(0, mid));
+    var right = new TreeNode();
+    right.val = List.copyOf(data.subList(mid, data.size()));
+    node.l = left;
+    node.r = right;
 
-    var mid = list.size() / 2;
-
-    node.r = new TreeNode();
-    node.r.val = new ArrayList<>(list.subList(mid, list.size()));
-    node.l = new TreeNode();
-    node.l.val = new ArrayList<>(list.subList(0, mid));
-
-    return merge(node, sort(node.l, new ArrayList<>(list.subList(0, mid))), sort(node.r, new ArrayList<>(list.subList(mid, list.size()))));
+    sort(left);
+    sort(right);
+    merge(node, left, right);
   }
 
   private void step() {
-    var result = sort(root, list);
-    System.out.println(result);
+    sort(root);
+    System.out.println(root.val);
   }
 
   @Override
@@ -110,31 +114,35 @@ public class MergeSortSketch extends PApplet {
     background(40);
 
     reset();
-    Executors.newSingleThreadScheduledExecutor().schedule(this::step, 1, TimeUnit.SECONDS);
+    worker.schedule(this::step, 1, TimeUnit.SECONDS);
+  }
+
+  @Override
+  public void dispose() {
+    worker.shutdownNow();
+    super.dispose();
   }
 
 
   @Override
   public void draw() {
     background(40);
+    var snapshot = list;
     var gap = (width - 2 * margin - circleS * SIZE) / (SIZE - 1);
     var y = height / 10;
     ellipseMode(CENTER);
     textAlign(CENTER, CENTER);
-    drawList(list, margin, y, gap, 255);
+    drawList(snapshot, margin, y, gap, 255);
 
-    var curNode = root;
-
-    drawTreeList(curNode, margin, y + circleS, gap);
-
+    drawTreeList(root, margin, y + circleS, gap);
   }
 
-  private void drawList(List<Integer> l, int x0, int y, int gap, int fill) {
+  private void drawList(List<Integer> l, int x0, int y, int gap, int fillColor) {
 
     for (int i = 0; i < l.size(); i++) {
       var x = x0 + i * (gap + circleS) + circleS / 2;
       noStroke();
-      fill(fill);
+      fill(fillColor);
 
       circle(x, y, circleS);
       fill(60);
@@ -144,17 +152,32 @@ public class MergeSortSketch extends PApplet {
   }
 
   private void drawTreeList(TreeNode n, int x0, int y, int gap) {
-    drawList(n.val, x0, y, gap, n.isSorted ? 100 : 200);
-    if (n.l != null) {
+    if (n == null) return;
+    var v = n.val;
+    if (v == null) return;
+    drawList(v, x0, y, gap, n.isSorted ? 100 : 200);
+
+    var left = n.l;
+    var right = n.r;
+    if (left != null) {
       stroke(200);
       line(x0, y + 0.5f * circleS, x0, y + 1.5f * circleS);
-      drawTreeList(n.l, x0, y + circleS, gap);
+      drawTreeList(left, x0, y + circleS, gap);
     }
-    if (n.r != null) {
-      var newX0 = n.l != null ? (n.l.val.size()) * (circleS + gap) : 0;
+    if (right != null) {
+      var leftVal = left != null ? left.val : null;
+      var newX0 = leftVal != null ? leftVal.size() * (circleS + gap) : 0;
       stroke(200);
       line(x0 + newX0, y + 0.5f * circleS, x0 + newX0, y + 1.5f * circleS);
-      drawTreeList(n.r, x0 + newX0, y + circleS, gap);
+      drawTreeList(right, x0 + newX0, y + circleS, gap);
+    }
+  }
+
+  private static void sleepQuietly(long millis) {
+    try {
+      Thread.sleep(millis);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 }
