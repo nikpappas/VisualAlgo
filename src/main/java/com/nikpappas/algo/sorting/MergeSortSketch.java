@@ -13,17 +13,18 @@ import static java.lang.Thread.sleep;
 
 public class MergeSortSketch extends PApplet {
 
-  private static class TreeNode<T> {
-    T val;
-    TreeNode<T> l;
-    TreeNode<T> r;
+  private static class TreeNode {
+    List<Integer> val;
+    boolean isSorted;
+    TreeNode l;
+    TreeNode r;
   }
 
-  private int SIZE = 16;
+  private static final int SIZE = 16;
 
-  int circleS = 35;
-  int margin = 50;
-  int steps = 0;
+  private static final int circleS = 35;
+  private static final int margin = 50;
+
 
   public static void main(String[] args) {
     PApplet.main(Thread.currentThread().getStackTrace()[1].getClassName());
@@ -32,7 +33,7 @@ public class MergeSortSketch extends PApplet {
 
   List<Integer> list = new ArrayList<>();
 
-  TreeNode<List<Integer>> root = new TreeNode<>();
+  TreeNode root = new TreeNode();
 
 
   @Override
@@ -46,15 +47,10 @@ public class MergeSortSketch extends PApplet {
       list.add((int) (random(100)));
     }
     root.val = list;
-    steps = 0;
   }
 
-  @Override
-  public void keyPressed() {
-    step();
-  }
 
-  private List<Integer> merge(TreeNode<List<Integer>> node, List<Integer> a, List<Integer> b) {
+  private List<Integer> merge(TreeNode node, List<Integer> a, List<Integer> b) {
     var toRet = new LinkedList<Integer>();
     while (!a.isEmpty() && !b.isEmpty()) {
       if (a.get(0) < b.get(0)) {
@@ -76,6 +72,7 @@ public class MergeSortSketch extends PApplet {
 
     }
     node.val = toRet;
+    node.isSorted = true;
     try {
       sleep(1000);
     } catch (InterruptedException e) {
@@ -84,7 +81,7 @@ public class MergeSortSketch extends PApplet {
     return toRet;
   }
 
-  private List<Integer> sort(TreeNode<List<Integer>> node, List<Integer> list) {
+  private List<Integer> sort(TreeNode node, List<Integer> list) {
     if (list.size() == 1) {
       return list;
     }
@@ -95,9 +92,9 @@ public class MergeSortSketch extends PApplet {
 
     var mid = list.size() / 2;
 
-    node.r = new TreeNode<>();
+    node.r = new TreeNode();
     node.r.val = new ArrayList<>(list.subList(mid, list.size()));
-    node.l = new TreeNode<>();
+    node.l = new TreeNode();
     node.l.val = new ArrayList<>(list.subList(0, mid));
 
     return merge(node, sort(node.l, new ArrayList<>(list.subList(0, mid))), sort(node.r, new ArrayList<>(list.subList(mid, list.size()))));
@@ -124,23 +121,20 @@ public class MergeSortSketch extends PApplet {
     var y = height / 10;
     ellipseMode(CENTER);
     textAlign(CENTER, CENTER);
-    drawList(list, margin, y, gap);
+    drawList(list, margin, y, gap, 255);
 
     var curNode = root;
 
     drawTreeList(curNode, margin, y + circleS, gap);
 
-    fill(160);
-    text("steps: " + steps, width - 40, height / 10);
-
   }
 
-  private void drawList(List<Integer> l, int x0, int y, int gap) {
+  private void drawList(List<Integer> l, int x0, int y, int gap, int fill) {
 
     for (int i = 0; i < l.size(); i++) {
       var x = x0 + i * (gap + circleS) + circleS / 2;
       noStroke();
-      fill(200);
+      fill(fill);
 
       circle(x, y, circleS);
       fill(60);
@@ -149,8 +143,8 @@ public class MergeSortSketch extends PApplet {
     }
   }
 
-  private void drawTreeList(TreeNode<List<Integer>> n, int x0, int y, int gap) {
-    drawList(n.val, x0, y, gap);
+  private void drawTreeList(TreeNode n, int x0, int y, int gap) {
+    drawList(n.val, x0, y, gap, n.isSorted ? 100 : 200);
     if (n.l != null) {
       stroke(200);
       line(x0, y + 0.5f * circleS, x0, y + 1.5f * circleS);
